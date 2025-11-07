@@ -2,7 +2,7 @@
 
 A disposable macOS scratchpad that doesn't save content.  
 - Single TextEditor, always starts empty  
-- Settings (⌘,): System/System Mono + size, Always on top, Reset
+- Settings (⌘,): System/System Mono + size
 
 ## Requirements
 - macOS 15+
