@@ -1,16 +1,16 @@
-# Xcode / Swift
+# Xcode
 DerivedData/
 build/
 *.xcuserstate
 *.xcscmblueprint
 *.xccheckout
-*.moved-aside
-# User-specific settings
 **/*.xcworkspace/xcuserdata/
 **/*.xcodeproj/project.xcworkspace/xcuserdata/
 **/*.xcodeproj/xcuserdata/
+
 # SwiftPM
 .swiftpm/xcode
 .build/
+
 # Misc
 *.DS_Store
