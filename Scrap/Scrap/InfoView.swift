@@ -21,6 +21,7 @@ struct InfoView: View {
                 ShortcutRow(key: "⌘ + L", description: "Toggle Dash List")
                 ShortcutRow(key: "⌘ + Shift + L", description: "Toggle Numbered List")
                 ShortcutRow(key: "⌘ + /", description: "Toggle Comment")
+                ShortcutRow(key: "Tab", description: "Accept suggestion / Expand ---")
                 ShortcutRow(key: "⌘ + ,", description: "Settings")
             }
             
