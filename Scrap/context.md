@@ -1,0 +1,3 @@
+Scrap is a simple text editor for macOS. it is supposed to be styled like a native and simple macos utility, with very few features. 
+
+the whole purpose of scrap is that it is to be "scrap paper". it is not a full-featured text editor, but a simple and quick way to write down ideas, notes, and other text-based content. Scrap, by design, does not save any content and does not write any files. it is a scratchpad for loose text, half-thoughts, LLM prompts, and other ephemeral content.
