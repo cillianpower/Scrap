@@ -1,0 +1,2 @@
+Scrap is a natively styled, lightweight, and disposable text editor for MacOS that never saves your text content, written entirely in Swift.
+I use it personally to quickly sketch out messages where accidentally hitting enter would not be desirable (important instant messages, llm prompts, etc), and where i do not want to open apple notes or textedit and start making new files and looking at all my old stuff, etc. this is a very minimalist tool.

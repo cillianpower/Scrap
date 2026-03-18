@@ -1,0 +1,7 @@
+
+bugs to fix:
+
+if dealing with large blocks of text, they will sometimes disappear.
+
+enhancements:
+make the title bar transluscent like the body of the application. right now, the title bar is just grey, and i have not succeeded at fixing this.
