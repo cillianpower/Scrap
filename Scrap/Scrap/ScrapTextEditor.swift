@@ -69,6 +69,28 @@ class ScrapLineRuler: NSRulerView {
   }
 }
 
+class ScrapTextView: NSTextView {
+  weak var scrapCoordinator: ScrapTextEditor.Coordinator?
+
+  override func insertTab(_ sender: Any?) {
+    if scrapCoordinator?.handleTab(in: self) != true {
+      super.insertTab(sender)
+    }
+  }
+
+  override func insertNewline(_ sender: Any?) {
+    if scrapCoordinator?.handleNewline(in: self) != true {
+      super.insertNewline(sender)
+    }
+  }
+
+  override func insertBacktab(_ sender: Any?) {
+    if scrapCoordinator?.handleBacktab(in: self) != true {
+      super.insertBacktab(sender)
+    }
+  }
+}
+
 struct ScrapTextEditor: NSViewRepresentable {
   @Binding var text: String
   var font: NSFont
@@ -89,7 +111,7 @@ struct ScrapTextEditor: NSViewRepresentable {
     scrollView.backgroundColor = .clear
     scrollView.contentView.drawsBackground = false
 
-    let textView = NSTextView()
+    let textView = ScrapTextView()
     textView.isRichText = false
     textView.drawsBackground = false
     textView.backgroundColor = .clear
@@ -120,6 +142,8 @@ struct ScrapTextEditor: NSViewRepresentable {
       context.coordinator, selector: #selector(Coordinator.handleToggleComment),
       name: ScrapTextEditor.toggleCommentNotification, object: nil)
 
+    textView.scrapCoordinator = context.coordinator
+
     scrollView.documentView = textView
     return scrollView
   }
@@ -131,6 +155,7 @@ struct ScrapTextEditor: NSViewRepresentable {
     defer { context.coordinator.isUpdating = false }
 
     if textView.string != text {
+      context.coordinator.ghost = nil
       let savedSelection = textView.selectedRanges
       textView.string = text
       // Restore selection, clamping to new text length
@@ -166,6 +191,23 @@ struct ScrapTextEditor: NSViewRepresentable {
     var parent: ScrapTextEditor
     var isUpdating = false
 
+    fileprivate struct GhostText {
+      let position: Int
+      let character: String
+    }
+
+    fileprivate var ghost: GhostText? = nil
+
+    private static let numberedListRegex = try! NSRegularExpression(
+      pattern: "^(\\d+)([a-z])?\\.\\s")
+    private static let numberedPrefixRegex = try! NSRegularExpression(
+      pattern: "^(\\d+)\\.\\s")
+    private static let subItemPrefixRegex = try! NSRegularExpression(
+      pattern: "^(\\d+)[a-z]\\.\\s")
+    private static let autoClosePairs: [String: String] = [
+      "(": ")", "[": "]", "{": "}", "\"": "\"", "'": "'",
+    ]
+
     init(_ parent: ScrapTextEditor) {
       self.parent = parent
     }
@@ -174,10 +216,223 @@ struct ScrapTextEditor: NSViewRepresentable {
       NotificationCenter.default.removeObserver(self)
     }
 
+    // MARK: - Ghost text helpers
+
+    private func clearGhost(in textView: NSTextView) {
+      if let ghost = ghost, let layoutManager = textView.layoutManager {
+        let range = NSRange(location: ghost.position, length: 1)
+        if NSMaxRange(range) <= (textView.string as NSString).length {
+          layoutManager.removeTemporaryAttribute(
+            .foregroundColor, forCharacterRange: range)
+        }
+      }
+      ghost = nil
+    }
+
+    private func applyGhost(in textView: NSTextView, at position: Int, character: String) {
+      ghost = GhostText(position: position, character: character)
+      if let layoutManager = textView.layoutManager {
+        layoutManager.addTemporaryAttribute(
+          .foregroundColor, value: NSColor.tertiaryLabelColor,
+          forCharacterRange: NSRange(location: position, length: 1))
+      }
+    }
+
+    // MARK: - Tab / Newline handlers
+
+    func handleTab(in textView: NSTextView) -> Bool {
+      guard parent.isAutoCloseEnabled else { return false }
+
+      let selectedRange = textView.selectedRange()
+      guard selectedRange.length == 0 else { return false }
+
+      let string = textView.string as NSString
+      let lineRange = string.lineRange(for: NSRange(location: selectedRange.location, length: 0))
+      let beforeCursor = string.substring(
+        with: NSRange(location: lineRange.location,
+                      length: selectedRange.location - lineRange.location))
+
+      // 1. Triple-dash separator expansion
+      if beforeCursor == "---" {
+        let separator = String(repeating: "\u{2014}", count: 24)
+        textView.insertText(
+          separator,
+          replacementRange: NSRange(location: lineRange.location, length: 3))
+        return true
+      }
+
+      // 2. Empty numbered prefix → indent to sub-item: "3. " → "2a. "
+      if let match = Self.numberedPrefixRegex.firstMatch(
+          in: beforeCursor,
+          range: NSRange(location: 0, length: beforeCursor.utf16.count)),
+        match.range.length == beforeCursor.utf16.count
+      {
+        let lineText = string.substring(with: lineRange)
+        let lineContent =
+          lineText.hasSuffix("\n") ? String(lineText.dropLast()) : lineText
+        if beforeCursor == lineContent {
+          let numberRange = match.range(at: 1)
+          let numberStr = (beforeCursor as NSString).substring(with: numberRange)
+          if let num = Int(numberStr), num > 1 {
+            textView.insertText(
+              "\(num - 1)a. ",
+              replacementRange: NSRange(
+                location: lineRange.location,
+                length: (lineContent as NSString).length))
+            return true
+          }
+        }
+      }
+
+      // 3. Accept ghost
+      if let ghost = ghost, selectedRange.location == ghost.position {
+        clearGhost(in: textView)
+        textView.setSelectedRange(NSRange(location: ghost.position + 1, length: 0))
+        return true
+      }
+
+      return false
+    }
+
+    func handleNewline(in textView: NSTextView) -> Bool {
+      guard parent.isAutoCloseEnabled else { return false }
+
+      let selectedRange = textView.selectedRange()
+      guard selectedRange.length == 0 else { return false }
+
+      let string = textView.string as NSString
+      let lineRange = string.lineRange(for: NSRange(location: selectedRange.location, length: 0))
+      let beforeCursor = string.substring(
+        with: NSRange(location: lineRange.location,
+                      length: selectedRange.location - lineRange.location))
+
+      // Numbered list: "1. item" or sub-item "3a. item"
+      if let match = Self.numberedListRegex.firstMatch(
+          in: beforeCursor,
+          range: NSRange(location: 0, length: beforeCursor.utf16.count))
+      {
+        // Empty item (just the prefix) → remove prefix
+        if match.range.length == beforeCursor.utf16.count {
+          textView.insertText(
+            "",
+            replacementRange: NSRange(
+              location: lineRange.location,
+              length: (beforeCursor as NSString).length))
+          return true
+        }
+        let numberRange = match.range(at: 1)
+        let numberStr = (beforeCursor as NSString).substring(with: numberRange)
+        let letterRange = match.range(at: 2)
+
+        if letterRange.location != NSNotFound {
+          // Sub-item: 3a → 3b, 3z → 4.
+          let letter = (beforeCursor as NSString).substring(with: letterRange)
+          if let scalar = letter.unicodeScalars.first, scalar.value < UnicodeScalar("z").value {
+            let nextLetter = String(UnicodeScalar(scalar.value + 1)!)
+            textView.insertText(
+              "\n\(numberStr)\(nextLetter). ", replacementRange: selectedRange)
+          } else if let num = Int(numberStr) {
+            textView.insertText("\n\(num + 1). ", replacementRange: selectedRange)
+          }
+          return true
+        } else if let num = Int(numberStr) {
+          textView.insertText("\n\(num + 1). ", replacementRange: selectedRange)
+          return true
+        }
+      }
+
+      // En-dash list: "– item"
+      if beforeCursor.hasPrefix("\u{2013} ") {
+        if (beforeCursor as NSString).length == 2 {
+          textView.insertText(
+            "",
+            replacementRange: NSRange(
+              location: lineRange.location, length: 2))
+          return true
+        }
+        textView.insertText("\n\u{2013} ", replacementRange: selectedRange)
+        return true
+      }
+
+      // Dash list: "- item"
+      if beforeCursor.hasPrefix("- ") {
+        if (beforeCursor as NSString).length == 2 {
+          textView.insertText(
+            "",
+            replacementRange: NSRange(
+              location: lineRange.location, length: 2))
+          return true
+        }
+        textView.insertText("\n- ", replacementRange: selectedRange)
+        return true
+      }
+
+      return false
+    }
+
+    func handleBacktab(in textView: NSTextView) -> Bool {
+      guard parent.isAutoCloseEnabled else { return false }
+
+      let selectedRange = textView.selectedRange()
+      guard selectedRange.length == 0 else { return false }
+
+      let string = textView.string as NSString
+      let lineRange = string.lineRange(
+        for: NSRange(location: selectedRange.location, length: 0))
+      let beforeCursor = string.substring(
+        with: NSRange(location: lineRange.location,
+                      length: selectedRange.location - lineRange.location))
+
+      // Empty sub-item prefix "Na. " → outdent to "(N+1). "
+      if let match = Self.subItemPrefixRegex.firstMatch(
+          in: beforeCursor,
+          range: NSRange(location: 0, length: beforeCursor.utf16.count)),
+        match.range.length == beforeCursor.utf16.count
+      {
+        let lineText = string.substring(with: lineRange)
+        let lineContent =
+          lineText.hasSuffix("\n") ? String(lineText.dropLast()) : lineText
+        if beforeCursor == lineContent {
+          let numberRange = match.range(at: 1)
+          let numberStr = (beforeCursor as NSString).substring(with: numberRange)
+          if let num = Int(numberStr) {
+            textView.insertText(
+              "\(num + 1). ",
+              replacementRange: NSRange(
+                location: lineRange.location,
+                length: (lineContent as NSString).length))
+            return true
+          }
+        }
+      }
+
+      return false
+    }
+
+    // MARK: - Text view delegate
+
     func textDidChange(_ notification: Notification) {
       guard !isUpdating, let textView = notification.object as? NSTextView else { return }
       self.parent.text = textView.string
       textView.enclosingScrollView?.verticalRulerView?.needsDisplay = true
+
+      // Revalidate and reapply ghost styling
+      if let ghost = ghost {
+        let string = textView.string as NSString
+        if ghost.position < string.length {
+          let charAtPos = string.substring(
+            with: NSRange(location: ghost.position, length: 1))
+          if charAtPos == ghost.character {
+            textView.layoutManager?.addTemporaryAttribute(
+              .foregroundColor, value: NSColor.tertiaryLabelColor,
+              forCharacterRange: NSRange(location: ghost.position, length: 1))
+          } else {
+            self.ghost = nil
+          }
+        } else {
+          self.ghost = nil
+        }
+      }
     }
 
     @objc func handlePasteAndNormalize() {
@@ -209,12 +464,12 @@ struct ScrapTextEditor: NSViewRepresentable {
       guard let textView = NSApp.keyWindow?.firstResponder as? NSTextView else { return }
       modifySelectedLines(textView) { line in
         let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.hasPrefix("– ") {
+        if trimmed.hasPrefix("\u{2013} ") {
           return String(trimmed.dropFirst(2))
         } else if trimmed.hasPrefix("- ") {
           return String(trimmed.dropFirst(2))
         } else {
-          return "– " + line
+          return "\u{2013} " + line
         }
       }
     }
@@ -266,23 +521,64 @@ struct ScrapTextEditor: NSViewRepresentable {
       _ textView: NSTextView, shouldChangeTextIn affectedCharRange: NSRange,
       replacementString: String?
     ) -> Bool {
-      guard parent.isAutoCloseEnabled, let replacement = replacementString, replacement.count == 1
-      else { return true }
-      let pairs: [String: String] = ["(": ")", "[": "]", "{": "}", "\"": "\"", "'": "'"]
-      if let closing = pairs[replacement] {
-        if affectedCharRange.length > 0 {
-          let selectedText = (textView.string as NSString).substring(with: affectedCharRange)
-          textView.insertText(
-            replacement + selectedText + closing, replacementRange: affectedCharRange)
-          textView.setSelectedRange(
-            NSRange(location: affectedCharRange.location + 1 + selectedText.count + 1, length: 0))
-          return false
-        } else {
-          textView.insertText(replacement + closing, replacementRange: affectedCharRange)
-          textView.setSelectedRange(NSRange(location: affectedCharRange.location + 1, length: 0))
-          return false
+      guard let replacement = replacementString else {
+        clearGhost(in: textView)
+        return true
+      }
+
+      // Overtype: user types the ghost character at the ghost position
+      if let currentGhost = ghost, parent.isAutoCloseEnabled,
+        replacement == currentGhost.character,
+        affectedCharRange.location == currentGhost.position,
+        affectedCharRange.length == 0
+      {
+        clearGhost(in: textView)
+        textView.setSelectedRange(
+          NSRange(location: currentGhost.position + 1, length: 0))
+        return false
+      }
+
+      // Auto-close with ghost
+      if parent.isAutoCloseEnabled, replacement.count == 1 {
+        if let closing = Self.autoClosePairs[replacement] {
+          if affectedCharRange.length > 0 {
+            // Selection wrapping: no ghost needed
+            clearGhost(in: textView)
+            let selectedText = (textView.string as NSString).substring(with: affectedCharRange)
+            textView.insertText(
+              replacement + selectedText + closing, replacementRange: affectedCharRange)
+            textView.setSelectedRange(
+              NSRange(
+                location: affectedCharRange.location + 1 + (selectedText as NSString).length + 1,
+                length: 0))
+            return false
+          } else {
+            // No selection: insert pair with ghost on closing char
+            clearGhost(in: textView)
+            textView.insertText(
+              replacement + closing, replacementRange: affectedCharRange)
+            let cursorPos = affectedCharRange.location + 1
+            textView.setSelectedRange(NSRange(location: cursorPos, length: 0))
+            applyGhost(in: textView, at: cursorPos, character: closing)
+            return false
+          }
         }
       }
+
+      // Ghost position tracking for normal edits
+      if let currentGhost = ghost {
+        let editEnd = affectedCharRange.location + affectedCharRange.length
+        if editEnd <= currentGhost.position {
+          let delta = (replacement as NSString).length - affectedCharRange.length
+          clearGhost(in: textView)
+          ghost = GhostText(
+            position: currentGhost.position + delta,
+            character: currentGhost.character)
+        } else if affectedCharRange.location <= currentGhost.position {
+          clearGhost(in: textView)
+        }
+      }
+
       return true
     }
   }
