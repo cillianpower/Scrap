@@ -9,20 +9,36 @@ struct ContentView: View {
 
   @AppStorage("editorFontName") private var editorFontName: String = "SystemMono"
   @AppStorage("editorFontSize") private var editorFontSize: Double = 14
+  @AppStorage("editorFontWeight") private var editorFontWeightRaw: Double = NSFont.Weight.regular.rawValue
   @AppStorage("isAlwaysOnTop") private var isAlwaysOnTop: Bool = false
   @AppStorage("isSpellCheckEnabled") private var isSpellCheckEnabled: Bool = true
   @AppStorage("isAutoCloseEnabled") private var isAutoCloseEnabled: Bool = true
   @AppStorage("showLineNumbers") private var showLineNumbers: Bool = false
 
+  @State private var scrollDelta: CGFloat = 0
+
+  private var dynamicFadeHeight: CGFloat {
+    let base: CGFloat = 36
+    let boost = min(max(0, scrollDelta) * 0.3, 16)
+    return base + boost
+  }
+
+  private var editorFontWeight: NSFont.Weight { NSFont.Weight(rawValue: editorFontWeightRaw) }
+
   private var nsEditorFont: NSFont {
     switch editorFontName {
     case "System":
-      return NSFont.systemFont(ofSize: CGFloat(editorFontSize))
+      return NSFont.systemFont(ofSize: CGFloat(editorFontSize), weight: editorFontWeight)
     case "SystemMono":
-      return NSFont.monospacedSystemFont(ofSize: CGFloat(editorFontSize), weight: .regular)
+      return NSFont.monospacedSystemFont(ofSize: CGFloat(editorFontSize), weight: editorFontWeight)
     default:
-      return NSFont(name: editorFontName, size: CGFloat(editorFontSize))
-        ?? NSFont.monospacedSystemFont(ofSize: CGFloat(editorFontSize), weight: .regular)
+      let descriptor: NSFontDescriptor = {
+        let base = NSFontDescriptor(fontAttributes: [.family: editorFontName])
+        let traits: [NSFontDescriptor.TraitKey: Any] = [.weight: editorFontWeightRaw]
+        return base.addingAttributes([.traits: traits])
+      }()
+      return NSFont(descriptor: descriptor, size: CGFloat(editorFontSize))
+        ?? NSFont.monospacedSystemFont(ofSize: CGFloat(editorFontSize), weight: editorFontWeight)
     }
   }
 
@@ -39,9 +55,32 @@ struct ContentView: View {
         showLineNumbers: showLineNumbers
       )
       .ignoresSafeArea(edges: [.bottom, .leading, .trailing])
+      .mask(alignment: .top) {
+        VStack(spacing: 0) {
+          LinearGradient(
+            gradient: Gradient(stops: [
+              .init(color: .clear, location: 0),
+              .init(color: .white, location: 1)
+            ]),
+            startPoint: .top,
+            endPoint: .bottom
+          )
+          .frame(height: dynamicFadeHeight)
+
+          Color.white
+        }
+      }
     }
     .frame(minWidth: 400, minHeight: 300)
     .modifier(WindowConfigurator(isAlwaysOnTop: isAlwaysOnTop))
+    .onReceive(
+      NotificationCenter.default.publisher(
+        for: ScrapTextEditor.Coordinator.scrollOffsetNotification)
+    ) { notification in
+      if let offset = notification.userInfo?["offset"] as? CGFloat {
+        scrollDelta = offset
+      }
+    }
   }
 }
 

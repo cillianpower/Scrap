@@ -108,6 +108,7 @@ struct ScrapTextEditor: NSViewRepresentable {
     scrollView.drawsBackground = false
     scrollView.hasVerticalScroller = true
     scrollView.verticalScroller = TransparentScroller()
+    scrollView.scrollerInsets = NSEdgeInsets(top: 0, left: 0, bottom: 4, right: 4)
     scrollView.backgroundColor = .clear
     scrollView.contentView.drawsBackground = false
 
@@ -143,6 +144,13 @@ struct ScrapTextEditor: NSViewRepresentable {
       name: ScrapTextEditor.toggleCommentNotification, object: nil)
 
     textView.scrapCoordinator = context.coordinator
+
+    // Observe scroll for dynamic titlebar fade
+    NotificationCenter.default.addObserver(
+      context.coordinator,
+      selector: #selector(Coordinator.clipViewBoundsDidChange(_:)),
+      name: NSView.boundsDidChangeNotification,
+      object: scrollView.contentView)
 
     scrollView.documentView = textView
     return scrollView
@@ -191,6 +199,23 @@ struct ScrapTextEditor: NSViewRepresentable {
     var parent: ScrapTextEditor
     var isUpdating = false
 
+    static let scrollOffsetNotification = Notification.Name("ScrapScrollOffset")
+
+    private var lastPostedOffset: CGFloat = 0
+
+    @objc func clipViewBoundsDidChange(_ notification: Notification) {
+      guard let clipView = notification.object as? NSClipView else { return }
+      let offset = clipView.bounds.origin.y
+      guard abs(offset - lastPostedOffset) > 0.5 else { return }
+      lastPostedOffset = offset
+      DispatchQueue.main.async {
+        NotificationCenter.default.post(
+          name: Self.scrollOffsetNotification,
+          object: nil,
+          userInfo: ["offset": offset])
+      }
+    }
+
     fileprivate struct GhostText {
       let position: Int
       let character: String
@@ -220,7 +245,7 @@ struct ScrapTextEditor: NSViewRepresentable {
 
     private func clearGhost(in textView: NSTextView) {
       if let ghost = ghost, let layoutManager = textView.layoutManager {
-        let range = NSRange(location: ghost.position, length: 1)
+        let range = NSRange(location: ghost.position, length: ghost.character.utf16.count)
         if NSMaxRange(range) <= (textView.string as NSString).length {
           layoutManager.removeTemporaryAttribute(
             .foregroundColor, forCharacterRange: range)
@@ -234,7 +259,7 @@ struct ScrapTextEditor: NSViewRepresentable {
       if let layoutManager = textView.layoutManager {
         layoutManager.addTemporaryAttribute(
           .foregroundColor, value: NSColor.tertiaryLabelColor,
-          forCharacterRange: NSRange(location: position, length: 1))
+          forCharacterRange: NSRange(location: position, length: character.utf16.count))
       }
     }
 
@@ -261,7 +286,74 @@ struct ScrapTextEditor: NSViewRepresentable {
         return true
       }
 
-      // 2. Empty numbered prefix → indent to sub-item: "3. " → "2a. "
+      // 2. Markdown prefix completions
+
+      // Heading cycle: # → ## → ... → ###### → #
+      let headingPrefixes = ["# ", "## ", "### ", "#### ", "##### ", "###### "]
+      if let idx = headingPrefixes.firstIndex(of: beforeCursor) {
+        let nextIdx = (idx + 1) % headingPrefixes.count
+        textView.insertText(
+          headingPrefixes[nextIdx],
+          replacementRange: NSRange(location: lineRange.location,
+                                    length: beforeCursor.utf16.count))
+        return true
+      }
+
+      // Blockquote nesting: > → >> → >>> → >
+      let blockquotePrefixes = ["> ", ">> ", ">>> ", ">>>> "]
+      if let idx = blockquotePrefixes.firstIndex(of: beforeCursor) {
+        let nextIdx = (idx + 1) % blockquotePrefixes.count
+        textView.insertText(
+          blockquotePrefixes[nextIdx],
+          replacementRange: NSRange(location: lineRange.location,
+                                    length: beforeCursor.utf16.count))
+        return true
+      }
+
+      // List symbol cycling: - → * → + → -
+      if beforeCursor == "- " {
+        textView.insertText(
+          "* ",
+          replacementRange: NSRange(location: lineRange.location, length: 2))
+        return true
+      }
+      if beforeCursor == "* " {
+        textView.insertText(
+          "+ ",
+          replacementRange: NSRange(location: lineRange.location, length: 2))
+        return true
+      }
+      if beforeCursor == "+ " {
+        textView.insertText(
+          "- ",
+          replacementRange: NSRange(location: lineRange.location, length: 2))
+        return true
+      }
+
+      // Checkbox toggle: - [ ] ↔ - [x]
+      if beforeCursor == "- [ ] " {
+        textView.insertText(
+          "- [x] ",
+          replacementRange: NSRange(location: lineRange.location, length: 6))
+        return true
+      }
+      if beforeCursor == "- [x] " {
+        textView.insertText(
+          "- [ ] ",
+          replacementRange: NSRange(location: lineRange.location, length: 6))
+        return true
+      }
+
+      // Code block expansion: ``` → ```\n\n```
+      if beforeCursor == "```" {
+        textView.insertText(
+          "```\n\n```",
+          replacementRange: NSRange(location: lineRange.location, length: 3))
+        textView.setSelectedRange(NSRange(location: lineRange.location + 4, length: 0))
+        return true
+      }
+
+      // 3. Empty numbered prefix → indent to sub-item: "3. " → "2a. "
       if let match = Self.numberedPrefixRegex.firstMatch(
           in: beforeCursor,
           range: NSRange(location: 0, length: beforeCursor.utf16.count)),
@@ -284,7 +376,7 @@ struct ScrapTextEditor: NSViewRepresentable {
         }
       }
 
-      // 3. Accept ghost
+      // 4. Accept ghost
       if let ghost = ghost, selectedRange.location == ghost.position {
         clearGhost(in: textView)
         textView.setSelectedRange(NSRange(location: ghost.position + 1, length: 0))

@@ -6,6 +6,7 @@ struct SettingsView: View {
 
   @AppStorage("editorFontName") private var editorFontName: String = "SystemMono"
   @AppStorage("editorFontSize") private var editorFontSize: Double = 14
+  @AppStorage("editorFontWeight") private var editorFontWeightRaw: Double = NSFont.Weight.regular.rawValue
   @AppStorage("isAlwaysOnTop") private var isAlwaysOnTop: Bool = false
   @AppStorage("isSpellCheckEnabled") private var isSpellCheckEnabled: Bool = false
   @AppStorage("isAutoCloseEnabled") private var isAutoCloseEnabled: Bool = true
@@ -14,6 +15,18 @@ struct SettingsView: View {
   @State private var fontSearchQuery: String = ""
 
   private let allFonts: [String] = NSFontManager.shared.availableFontFamilies.sorted()
+
+  private let fontWeights: [(String, Double)] = [
+    ("Ultra Light", NSFont.Weight.ultraLight.rawValue),
+    ("Thin", NSFont.Weight.thin.rawValue),
+    ("Light", NSFont.Weight.light.rawValue),
+    ("Regular", NSFont.Weight.regular.rawValue),
+    ("Medium", NSFont.Weight.medium.rawValue),
+    ("Semibold", NSFont.Weight.semibold.rawValue),
+    ("Bold", NSFont.Weight.bold.rawValue),
+    ("Heavy", NSFont.Weight.heavy.rawValue),
+    ("Black", NSFont.Weight.black.rawValue),
+  ]
 
   // Layout Constants
   private let labelWidth: CGFloat = 70
@@ -29,7 +42,7 @@ struct SettingsView: View {
 
   var body: some View {
     mainSettingsView
-      .frame(width: 350, height: 280)
+      .frame(width: 350, height: 320)
   }
 
   private var mainSettingsView: some View {
@@ -58,6 +71,21 @@ struct SettingsView: View {
                   .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
               )
           }
+        }
+
+        // Font Weight
+        HStack(spacing: 12) {
+          inspectorLabel("Weight")
+
+          Picker("", selection: $editorFontWeightRaw) {
+            ForEach(fontWeights, id: \.1) { name, raw in
+              Text(name).tag(raw)
+            }
+          }
+          .pickerStyle(.menu)
+          .labelsHidden()
+          .controlSize(.small)
+          .frame(maxWidth: .infinity, alignment: .leading)
         }
 
         // Font Family (Integrated Stack)
@@ -172,6 +200,7 @@ struct SettingsView: View {
     withAnimation {
       editorFontName = "SystemMono"
       editorFontSize = 14
+      editorFontWeightRaw = NSFont.Weight.regular.rawValue
       isAlwaysOnTop = false
       isSpellCheckEnabled = true
       isAutoCloseEnabled = true

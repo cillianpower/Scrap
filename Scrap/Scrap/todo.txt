@@ -1,7 +1,6 @@
 
 bugs to fix:
 
-if dealing with large blocks of text, they will sometimes disappear.
+if dealing with large blocks of text, they will sometimes disappear or shuffle around strangely. i am working on reproducig this, but please investigate what might cause this. write no code.
 
-enhancements:
-make the title bar transluscent like the body of the application. right now, the title bar is just grey, and i have not succeeded at fixing this.
+make the "'" auto close if the very next letter is an "s"

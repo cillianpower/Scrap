@@ -11,6 +11,20 @@ struct Scrap: App {
     .windowStyle(.hiddenTitleBar)
     .commands {
       CommandMenu("Format") {
+        Button("Bigger") {
+          let current = UserDefaults.standard.double(forKey: "editorFontSize")
+          UserDefaults.standard.set(min(32, current + 1), forKey: "editorFontSize")
+        }
+        .keyboardShortcut("=", modifiers: .command)
+
+        Button("Smaller") {
+          let current = UserDefaults.standard.double(forKey: "editorFontSize")
+          UserDefaults.standard.set(max(10, current - 1), forKey: "editorFontSize")
+        }
+        .keyboardShortcut("-", modifiers: .command)
+
+        Divider()
+
         Button("Paste and Normalize") {
           NotificationCenter.default.post(
             name: ScrapTextEditor.pasteAndNormalizeNotification, object: nil)
