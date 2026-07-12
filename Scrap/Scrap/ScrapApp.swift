@@ -72,15 +72,31 @@ struct Scrap: App {
           }
         }
       }
+
+      CommandGroup(replacing: .appInfo) {
+        Button("About Scrap") {
+          showAboutPanel()
+        }
+      }
     }
 
     Settings {
       SettingsView()
     }
+  }
 
-    Window("Scrap Info", id: "info") {
-      InfoView()
-    }
-    .windowResizability(.contentSize)
+  // MARK: - Custom About Panel
+
+  private func showAboutPanel() {
+    let credits = NSAttributedString(
+      string: "Scrap is a simple and quick scratchpad for loose text, half-thoughts, and ephemeral content. By design, it does not save any content and does not write any files.",
+      attributes: [
+        .font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize),
+        .foregroundColor: NSColor.secondaryLabelColor,
+      ]
+    )
+    NSApplication.shared.orderFrontStandardAboutPanel(
+      options: [.credits: credits]
+    )
   }
 }

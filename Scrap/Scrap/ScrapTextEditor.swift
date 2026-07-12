@@ -60,9 +60,9 @@ class ScrapLineRuler: NSRulerView {
       let relativeY = lineRect.origin.y + textView.textContainerInset.height - visibleRect.origin.y
       let centeredY = relativeY + (lineRect.height - numSize.height) / 2
 
-      let x = thickness - numSize.width - 8
+      let xPos = thickness - numSize.width - 8
 
-      numStr.draw(at: NSPoint(x: x, y: centeredY), withAttributes: attrs)
+      numStr.draw(at: NSPoint(x: xPos, y: centeredY), withAttributes: attrs)
 
       lineNumber += 1
     }
@@ -223,10 +223,13 @@ struct ScrapTextEditor: NSViewRepresentable {
 
     fileprivate var ghost: GhostText? = nil
 
+    // swiftlint:disable:next force_try
     private static let numberedListRegex = try! NSRegularExpression(
       pattern: "^(\\d+)([a-z])?\\.\\s")
+    // swiftlint:disable:next force_try
     private static let numberedPrefixRegex = try! NSRegularExpression(
       pattern: "^(\\d+)\\.\\s")
+    // swiftlint:disable:next force_try
     private static let subItemPrefixRegex = try! NSRegularExpression(
       pattern: "^(\\d+)[a-z]\\.\\s")
     private static let autoClosePairs: [String: String] = [
@@ -628,6 +631,20 @@ struct ScrapTextEditor: NSViewRepresentable {
         textView.setSelectedRange(
           NSRange(location: currentGhost.position + 1, length: 0))
         return false
+      }
+
+      // Experiment A: Context-aware apostrophe (contraction/possessive guard)
+      if replacement == "'" && affectedCharRange.length == 0 {
+        let nsString = textView.string as NSString
+        if affectedCharRange.location > 0 {
+          let charBefore = nsString.substring(
+            with: NSRange(location: affectedCharRange.location - 1, length: 1))
+          if charBefore.rangeOfCharacter(from: .alphanumerics) != nil {
+            // Preceded by a word character → contraction/possessive → no auto-close
+            return true
+          }
+        }
+        // else: preceded by space/bracket/start → auto-close as usual
       }
 
       // Auto-close with ghost

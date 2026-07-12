@@ -1,6 +1,0 @@
-
-bugs to fix:
-
-if dealing with large blocks of text, they will sometimes disappear or shuffle around strangely. i am working on reproducig this, but please investigate what might cause this. write no code.
-
-make the "'" auto close if the very next letter is an "s"

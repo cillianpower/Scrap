@@ -2,8 +2,6 @@ import AppKit
 import SwiftUI
 
 struct SettingsView: View {
-  @Environment(\.openWindow) private var openWindow
-
   @AppStorage("editorFontName") private var editorFontName: String = "SystemMono"
   @AppStorage("editorFontSize") private var editorFontSize: Double = 14
   @AppStorage("editorFontWeight") private var editorFontWeightRaw: Double = NSFont.Weight.regular.rawValue
@@ -11,6 +9,8 @@ struct SettingsView: View {
   @AppStorage("isSpellCheckEnabled") private var isSpellCheckEnabled: Bool = false
   @AppStorage("isAutoCloseEnabled") private var isAutoCloseEnabled: Bool = true
   @AppStorage("showLineNumbers") private var showLineNumbers: Bool = false
+  @AppStorage("windowMaterial") private var windowMaterial: String = "frosted"
+  @AppStorage("backgroundOpacity") private var backgroundOpacity: Double = 1.0
 
   @State private var fontSearchQuery: String = ""
 
@@ -42,14 +42,17 @@ struct SettingsView: View {
 
   var body: some View {
     mainSettingsView
-      .frame(width: 350, height: 320)
+      .frame(width: 350, height: 460)
   }
 
   private var mainSettingsView: some View {
     VStack(alignment: .leading, spacing: 10) {
 
       // MARK: Typography
-      VStack(spacing: 8) {
+      VStack(alignment: .leading, spacing: 8) {
+        Text("Typography")
+          .font(.subheadline)
+          .foregroundStyle(.secondary)
 
         // Font Size (Power Slider)
         HStack(spacing: 12) {
@@ -131,8 +134,11 @@ struct SettingsView: View {
       Divider()
         .padding(.vertical, 2)
 
-      // MARK: Behavior
-      VStack(spacing: 6) {
+      // MARK: General
+      VStack(alignment: .leading, spacing: 6) {
+        Text("General")
+          .font(.subheadline)
+          .foregroundStyle(.secondary)
         inspectorToggle("Float", isOn: $isAlwaysOnTop, description: "Keep window on top")
         inspectorToggle("Spell Check", isOn: $isSpellCheckEnabled)
         inspectorToggle("Auto-Close", isOn: $isAutoCloseEnabled, description: "Brackets & quotes")
@@ -142,18 +148,43 @@ struct SettingsView: View {
       Divider()
         .padding(.vertical, 2)
 
+      // MARK: Window Material
+      VStack(alignment: .leading, spacing: 8) {
+        Text("Window Material")
+          .font(.subheadline)
+          .foregroundStyle(.secondary)
+
+        Picker("", selection: $windowMaterial) {
+          Text("Frosted (blur)").tag("frosted")
+          Text("Glass").tag("glass")
+          Text("Opaque").tag("opaque")
+        }
+        .pickerStyle(.radioGroup)
+        .labelsHidden()
+
+        if windowMaterial == "glass" {
+          HStack {
+            Text("Opacity")
+              .font(.caption)
+              .foregroundStyle(.tertiary)
+            Slider(value: $backgroundOpacity, in: 0...1, step: 0.05)
+            Text("\(Int(backgroundOpacity * 100))%")
+              .font(.caption)
+              .foregroundStyle(.tertiary)
+              .frame(width: 32, alignment: .trailing)
+          }
+        }
+      }
+
+      Divider()
+        .padding(.vertical, 2)
+
       // MARK: Footer
       HStack {
-        Button {
-          openWindow(id: "info")
-        } label: {
-          Image(systemName: "info.circle")
-            .font(.body)
-        }
-        .buttonStyle(.plain)
-        .help("Show Shortcuts & Info")
-
-        Spacer()
+        Text("Settings apply instantly and persist between launches.")
+          .font(.footnote)
+          .foregroundStyle(.secondary)
+          .frame(maxWidth: .infinity, alignment: .leading)
 
         Button("Reset") {
           resetDefaults()
@@ -205,6 +236,8 @@ struct SettingsView: View {
       isSpellCheckEnabled = true
       isAutoCloseEnabled = true
       showLineNumbers = false
+      windowMaterial = "frosted"
+      backgroundOpacity = 1.0
       fontSearchQuery = ""
     }
   }
